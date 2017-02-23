@@ -21,3 +21,23 @@ allprojects {
 task clean(type: Delete) {
     delete rootProject.buildDir
 }
+
+ext {
+    wifiBuddyVersion = "1.0.4-SNAPSHOT"
+}
+
+ext.buildConfigProperties = new Properties()
+ext.buildConfigProperties.load(new FileInputStream(rootProject.file("buildconfig.default.properties")))
+if(rootProject.file("buildconfig.local.properties").exists()) {
+    ext.buildConfigProperties.load(new FileInputStream(rootProject.file("buildconfig.local.properties")))
+}
+
+allprojects {
+    repositories {
+        jcenter()
+    }
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}

@@ -6,3 +6,5 @@ captures
 .idea
 *.iml
 wifibuddy/*.iml
+buildconfig.local.properties
+
