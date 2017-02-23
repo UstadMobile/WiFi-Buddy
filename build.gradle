@@ -12,15 +12,6 @@ buildscript {
     }
 }
 
-allprojects {
-    repositories {
-        jcenter()
-    }
-}
-
-task clean(type: Delete) {
-    delete rootProject.buildDir
-}
 
 ext {
     wifiBuddyVersion = "1.0.5-SNAPSHOT"
@@ -31,6 +22,7 @@ ext.buildConfigProperties.load(new FileInputStream(rootProject.file("buildconfig
 if(rootProject.file("buildconfig.local.properties").exists()) {
     ext.buildConfigProperties.load(new FileInputStream(rootProject.file("buildconfig.local.properties")))
 }
+
 
 allprojects {
     repositories {
