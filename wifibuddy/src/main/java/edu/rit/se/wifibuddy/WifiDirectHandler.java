@@ -664,8 +664,10 @@ public class WifiDirectHandler extends NonStopIntentService implements
             public void onFailure(int reason) {
                 WifiDirectHandler.this.isCreatingNoPrompt = false;
                 Log.i(TAG, "Group creation failed: " + FailureReason.fromInteger(reason));
-                WifiDirectHandler.this.noPromptActionListener.onFailure(reason);
-                WifiDirectHandler.this.noPromptActionListener = null;
+                if(noPromptActionListener != null) {
+                    noPromptActionListener.onFailure(reason);
+                    WifiDirectHandler.this.noPromptActionListener = null;
+                }
             }
         });
     }
@@ -840,16 +842,20 @@ public class WifiDirectHandler extends NonStopIntentService implements
                                     @Override
                                     public void onSuccess() {
                                         Log.i(TAG, "Successfully added local service for no-prompt group");
-                                        WifiDirectHandler.this.noPromptActionListener.onSuccess();
-                                        WifiDirectHandler.this.noPromptActionListener = null;
+                                        if(noPromptActionListener != null) {
+                                            noPromptActionListener.onSuccess();
+                                            noPromptActionListener = null;
+                                        }
                                     }
 
                                     @Override
                                     public void onFailure(int reason) {
                                         Log.e(TAG, "Failed to add local service for no-prompt group"
                                             + FailureReason.fromInteger(reason));
-                                        WifiDirectHandler.this.noPromptActionListener.onFailure(reason);
-                                        WifiDirectHandler.this.noPromptActionListener = null;
+                                        if(noPromptActionListener != null) {
+                                            noPromptActionListener.onFailure(reason);
+                                            noPromptActionListener = null;
+                                        }
                                     }
                                 });
 
