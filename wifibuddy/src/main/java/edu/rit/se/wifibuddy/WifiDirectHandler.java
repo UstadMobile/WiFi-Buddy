@@ -686,16 +686,13 @@ public class WifiDirectHandler extends NonStopIntentService implements
 
     /**
      * Connects to a no prompt service
-     * @param service The service to connect to
+     *
+     * @param txtRecord The DNS SD TXT Record of the service we want to connect with.
      */
-    public void connectToNoPromptService(DnsSdService service) {
+    public void connectToNoPromptService(DnsSdTxtRecord txtRecord) {
         removeService();
         WifiConfiguration configuration = new WifiConfiguration();
-        DnsSdTxtRecord txtRecord = dnsSdTxtRecordMap.get(service.getSrcDevice().deviceAddress);
-        if(txtRecord == null) {
-            Log.e(TAG, "No dnsSdTxtRecord found for the no prompt service");
-            return;
-        }
+
         // Quotes around these are required
         configuration.SSID = "\"" + txtRecord.getRecord().get(Keys.NO_PROMPT_NETWORK_NAME) + "\"";
         configuration.preSharedKey = "\"" + txtRecord.getRecord().get(Keys.NO_PROMPT_NETWORK_PASS) + "\"";
@@ -706,6 +703,25 @@ public class WifiDirectHandler extends NonStopIntentService implements
         wifiManager.enableNetwork(netId, true);
         wifiManager.reconnect();
         Log.i(TAG, "Connected to no prompt network");
+    }
+
+    /**
+     * Connect to a no prompt service using the DnsSdService. The SSID and passphrase are in fact
+     * contained in the SD TXT records. The Android documentation does not specify whether the service
+     * discovered or txt record available method will be called first. The txt record available
+     * method however contains the full domain (containing the service name) and it therefor contains
+     * all required info. Thus it seems like a better idea to connect to the no prompt service using
+     * the DnsSdTxtRecord rather than the DnsSdService.
+     *
+     * @param service
+     */
+    public void connectToNoPromptService(DnsSdService service) {
+        DnsSdTxtRecord txtRecord = dnsSdTxtRecordMap.get(service.getSrcDevice().deviceAddress);
+        if(txtRecord == null) {
+            Log.e(TAG, "No dnsSdTxtRecord found for the no prompt service");
+            return;
+        }
+        connectToNoPromptService(txtRecord);
     }
 
     @Nullable

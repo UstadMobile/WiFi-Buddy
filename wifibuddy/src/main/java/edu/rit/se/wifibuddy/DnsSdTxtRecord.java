@@ -22,4 +22,13 @@ public class DnsSdTxtRecord {
     public Map getRecord() {
         return record;
     }
+
+    /**
+     * The full domain of the service for which txt records were discovered
+     *
+     * @return
+     */
+    public String getFullDomain() {
+        return fullDomain;
+    }
 }
