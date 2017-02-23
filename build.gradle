@@ -23,7 +23,7 @@ task clean(type: Delete) {
 }
 
 ext {
-    wifiBuddyVersion = "1.0.4-SNAPSHOT"
+    wifiBuddyVersion = "1.0.5-SNAPSHOT"
 }
 
 ext.buildConfigProperties = new Properties()
