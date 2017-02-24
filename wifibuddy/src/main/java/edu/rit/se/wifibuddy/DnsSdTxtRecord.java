@@ -31,4 +31,13 @@ public class DnsSdTxtRecord {
     public String getFullDomain() {
         return fullDomain;
     }
+
+    /**
+     * Device details which has extra device information e.g status.
+     *
+     * @return
+     */
+    public WifiP2pDevice getDevice(){
+        return device;
+    }
 }
