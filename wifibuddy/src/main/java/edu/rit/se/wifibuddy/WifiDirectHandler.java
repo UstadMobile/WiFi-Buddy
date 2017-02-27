@@ -76,7 +76,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
     private boolean isGroupOwner = false;
     private boolean groupFormed = false;
     private boolean serviceDiscoveryRegistered = false;
-    private boolean stopDiscoveryAfterGroupFormed = true;
+    private boolean stopDiscoveryAfterGroupFormed = false;
 
     // Flag for creating a no prompt service
     private int noPromptServiceStatus;
@@ -492,8 +492,8 @@ public class WifiDirectHandler extends NonStopIntentService implements
 
                 Intent intent = new Intent(Action.DNS_SD_TXT_RECORD_AVAILABLE);
                 intent.putExtra(TXT_MAP_KEY, srcDevice.deviceAddress);
-                localBroadcastManager.sendBroadcast(intent);
                 dnsSdTxtRecordMap.put(srcDevice.deviceAddress, new DnsSdTxtRecord(fullDomainName, txtRecordMap, srcDevice));
+                localBroadcastManager.sendBroadcast(intent);
             }
         };
 
@@ -540,8 +540,10 @@ public class WifiDirectHandler extends NonStopIntentService implements
     }
 
     /**
-     * By default after a group is formed service discovery will be stopped automatically. If you
-     * wish to continue discovery after forming a group set this to false
+     * Previous behaviour was to stop discovery of services after a group has been formed. However
+     * some devices when Wifi P2P is initialized would themselves create a group automatically.
+     *
+     * This leads to continuouslyDiscoverServices being silently canceled (probably undesired).
      *
      * @param stopDiscoveryAfterGroupFormed true to stop discovery automatically after a group is formed; false otherwise
      */
