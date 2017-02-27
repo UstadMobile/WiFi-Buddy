@@ -4,9 +4,11 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiConfiguration;
+import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.WifiP2pConfig;
@@ -129,9 +131,13 @@ public class WifiDirectHandler extends NonStopIntentService implements
     public static final int NOPROMPT_STATUS_ACTIVE = 4;
 
     /**
-     * We attempted to create a no prompt network service but it failed at some point
+     * We attempted to create a no prompt network service but adding a group failed
      */
-    public static final int NOPROMPT_STATUS_FAILED = 20;
+    public static final int NOPROMPT_STATUS_FAILED_ADDING_GROUP = 20;
+
+    public static final int NOPROMPT_STATUS_FAILED_ADDING_LOCAL_SERVICE = 21;
+
+    public static final int NOPROMPT_STATUS_FAILED_OTHER = 29;
 
     /**
      * Adding a local service sends out UDP broadcasts. Periodically calling discoverPeers is
@@ -771,7 +777,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
 
             @Override
             public void onFailure(int reason) {
-                setNoPromptServiceStatus(NOPROMPT_STATUS_FAILED);
+                setNoPromptServiceStatus(NOPROMPT_STATUS_FAILED_ADDING_GROUP);
                 Log.i(TAG, "Group creation failed: " + FailureReason.fromInteger(reason));
                 if(noPromptActionListener != null) {
                     noPromptActionListener.onFailure(reason);
@@ -976,7 +982,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
 
                                     @Override
                                     public void onFailure(int reason) {
-                                        WifiDirectHandler.this.setNoPromptServiceStatus(NOPROMPT_STATUS_FAILED);
+                                        WifiDirectHandler.this.setNoPromptServiceStatus(NOPROMPT_STATUS_FAILED_ADDING_LOCAL_SERVICE);
                                         Log.e(TAG, "Failed to add local service for no-prompt group"
                                             + FailureReason.fromInteger(reason));
                                         if(noPromptActionListener != null) {
@@ -1047,8 +1053,27 @@ public class WifiDirectHandler extends NonStopIntentService implements
             });
         }
 
-
         localBroadcastManager.sendBroadcast(new Intent(Action.DEVICE_CHANGED));
+
+
+
+
+    }
+
+
+
+    public static String getCurrentSsid(Context context) {
+        String ssid = null;
+        ConnectivityManager connManager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+        NetworkInfo networkInfo = connManager.getNetworkInfo(ConnectivityManager.TYPE_WIFI);
+        if (networkInfo.isConnected()) {
+            final WifiManager wifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
+            final WifiInfo connectionInfo = wifiManager.getConnectionInfo();
+            if (connectionInfo != null && connectionInfo.getSSID().replace("\\s+","").length()==0) {
+                ssid = connectionInfo.getSSID();
+            }
+        }
+        return ssid;
     }
 
     /**
@@ -1112,6 +1137,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
                 SERVICE_REMOVED = "serviceRemoved",
                 PEERS_CHANGED = "peersChanged",
                 SERVICE_CONNECTED = "serviceConnected",
+                DEVICE_CONNECTED_TO_THE_GROUP = "deviceConnectedToTheGroup",
                 DEVICE_CHANGED = "deviceChanged",
                 MESSAGE_RECEIVED = "messageReceived",
                 WIFI_STATE_CHANGED = "wifiStateChanged",
