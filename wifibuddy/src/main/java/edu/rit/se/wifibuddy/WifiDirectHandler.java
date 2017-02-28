@@ -4,11 +4,9 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiConfiguration;
-import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.WifiP2pConfig;
@@ -51,18 +49,15 @@ public class WifiDirectHandler extends NonStopIntentService implements
     public static final String TXT_MAP_KEY = "txtMapKey";
     public static final String MESSAGE_KEY = "messageKey";
     private final String PEERS = "peers";
-    private final String WIFI_STATE = "wifiState";
 
     private Map<String, DnsSdTxtRecord> dnsSdTxtRecordMap;
     private Map<String, DnsSdService> dnsSdServiceMap;
     private List<ServiceDiscoveryTask> serviceDiscoveryTasks;
-    private WifiP2pDeviceList peers;
     private LocalBroadcastManager localBroadcastManager;
     private BroadcastReceiver p2pBroadcastReceiver;
     private BroadcastReceiver wifiBroadcastReceiver;
     private WifiP2pServiceInfo wifiP2pServiceInfo;
     private WifiP2pServiceRequest serviceRequest;
-    private Boolean isWifiP2pEnabled;
     private Handler handler = new Handler((Handler.Callback) this);
     private Thread socketHandler;
     private CommunicationManager communicationManager = null;
@@ -137,8 +132,6 @@ public class WifiDirectHandler extends NonStopIntentService implements
 
     public static final int NOPROMPT_STATUS_FAILED_ADDING_LOCAL_SERVICE = 21;
 
-    public static final int NOPROMPT_STATUS_FAILED_OTHER = 29;
-
     /**
      * Adding a local service sends out UDP broadcasts. Periodically calling discoverPeers is
      * apparently needed to force rebroadcasting the service so it can be reliably discovered
@@ -173,7 +166,6 @@ public class WifiDirectHandler extends NonStopIntentService implements
         super(ANDROID_SERVICE_NAME);
         dnsSdTxtRecordMap = new HashMap<>();
         dnsSdServiceMap = new HashMap<>();
-        peers = new WifiP2pDeviceList();
     }
 
     /**
@@ -286,6 +278,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
         // Indicates that Wi-Fi has been enabled, disabled, enabling, disabling, or unknown
         wifiIntentFilter.addAction(WifiManager.WIFI_STATE_CHANGED_ACTION);
         wifiIntentFilter.addAction(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION);
+
         registerReceiver(wifiBroadcastReceiver, wifiIntentFilter);
         Log.i(TAG, "Wi-Fi BroadcastReceiver registered");
     }
@@ -323,7 +316,6 @@ public class WifiDirectHandler extends NonStopIntentService implements
                 stopServiceDiscovery();
             }
 
-//            Thread handler;
             if (wifiP2pInfo.isGroupOwner && socketHandler == null) {
                 Log.i(TAG, "Connected as group owner");
                 try {
@@ -339,7 +331,6 @@ public class WifiDirectHandler extends NonStopIntentService implements
                 socketHandler.start();
             }
 
-//            localBroadcastManager.sendBroadcast(new Intent(Action.SERVICE_CONNECTED));
         } else {
 
             Log.w(TAG, "Group not formed");
@@ -922,7 +913,6 @@ public class WifiDirectHandler extends NonStopIntentService implements
             wifiP2pManager.requestPeers(channel, new WifiP2pManager.PeerListListener() {
                 @Override
                 public void onPeersAvailable(WifiP2pDeviceList peers) {
-                    WifiDirectHandler.this.peers = peers;
                     Intent intent = new Intent(Action.PEERS_CHANGED);
                     intent.putExtra(PEERS, peers);
                     localBroadcastManager.sendBroadcast(intent);
@@ -1011,6 +1001,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
     private void handleP2pStateChanged(Intent intent) {
         Log.i(TAG, "Wi-Fi P2P State Changed:");
         int state = intent.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -1);
+        boolean isWifiP2pEnabled;
         if (state == WifiP2pManager.WIFI_P2P_STATE_ENABLED) {
             // Wi-Fi Direct is enabled
             isWifiP2pEnabled = true;
@@ -1055,6 +1046,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
             });
         }
 
+        localBroadcastManager.sendBroadcast(new Intent("DeviceStatus:"+String.valueOf(thisDevice.status)));
         localBroadcastManager.sendBroadcast(new Intent(Action.DEVICE_CHANGED));
 
 
@@ -1062,21 +1054,6 @@ public class WifiDirectHandler extends NonStopIntentService implements
 
     }
 
-
-
-    public static String getCurrentSsid(Context context) {
-        String ssid = null;
-        ConnectivityManager connManager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
-        NetworkInfo networkInfo = connManager.getNetworkInfo(ConnectivityManager.TYPE_WIFI);
-        if (networkInfo.isConnected()) {
-            final WifiManager wifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
-            final WifiInfo connectionInfo = wifiManager.getConnectionInfo();
-            if (connectionInfo != null && connectionInfo.getSSID().replace("\\s+","").length()==0) {
-                ssid = connectionInfo.getSSID();
-            }
-        }
-        return ssid;
-    }
 
     /**
      * Toggle wifi
@@ -1139,7 +1116,6 @@ public class WifiDirectHandler extends NonStopIntentService implements
                 SERVICE_REMOVED = "serviceRemoved",
                 PEERS_CHANGED = "peersChanged",
                 SERVICE_CONNECTED = "serviceConnected",
-                DEVICE_CONNECTED_TO_THE_GROUP = "deviceConnectedToTheGroup",
                 DEVICE_CHANGED = "deviceChanged",
                 MESSAGE_RECEIVED = "messageReceived",
                 WIFI_STATE_CHANGED = "wifiStateChanged",
