@@ -1,12 +1,13 @@
 package edu.rit.se.wifibuddy;
-
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiConfiguration;
+import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.WifiP2pConfig;
@@ -77,6 +78,12 @@ public class WifiDirectHandler extends NonStopIntentService implements
     private int noPromptServiceStatus;
     private ServiceData noPromptServiceData;
     private WifiP2pManager.ActionListener noPromptActionListener;
+    private String noPromptNetworkSsidExpected=null;
+    /**
+     * Extra boolean that is broadcasted when the result of an attempt to connect to the no prompt
+     * network is known
+     */
+    public static final String EXTRA_NOPROMPT_NETWORK_SUCCEEDED="isNoPromptConnected";
 
     // Variables created in onCreate()
     private WifiP2pManager.Channel channel;
@@ -195,7 +202,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
         Log.i(TAG, "Creating WifiDirectHandler");
 
         // Registers the Wi-Fi Manager and the Wi-Fi BroadcastReceiver
-        wifiManager = (WifiManager) getSystemService(WIFI_SERVICE);
+        wifiManager = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
         registerWifiReceiver();
 
         // Scans for available Wi-Fi networks
@@ -260,6 +267,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
         Log.i(TAG, "P2P BroadcastReceiver registered");
     }
 
+
     /**
      * Unregisters the WifiDirectBroadcastReceiver and IntentFilter
      */
@@ -278,7 +286,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
         // Indicates that Wi-Fi has been enabled, disabled, enabling, disabling, or unknown
         wifiIntentFilter.addAction(WifiManager.WIFI_STATE_CHANGED_ACTION);
         wifiIntentFilter.addAction(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION);
-
+        wifiIntentFilter.addAction(ConnectivityManager.CONNECTIVITY_ACTION);
         registerReceiver(wifiBroadcastReceiver, wifiIntentFilter);
         Log.i(TAG, "Wi-Fi BroadcastReceiver registered");
     }
@@ -709,6 +717,9 @@ public class WifiDirectHandler extends NonStopIntentService implements
         }
     }
 
+
+
+
     /**
      * Initiates a connection to a service
      * @param service The service to connect to
@@ -793,7 +804,12 @@ public class WifiDirectHandler extends NonStopIntentService implements
     }
 
     /**
-     * Connects to a no prompt service
+     * Connects to a no prompt service.
+     *
+     * When the attempt to connect to the network succeeds or fails
+     * An Intent with the Action Action.NOPROMPT_NETWORK_CONNECTIVITY_ACTION will be broadcast. It will
+     * have a boolean extra EXTRA_NOPROMPT_NETWORK_SUCCEEDED indicating if the connection succeeded
+     * or not.
      *
      * @param txtRecord The DNS SD TXT Record of the service we want to connect with.
      */
@@ -801,9 +817,12 @@ public class WifiDirectHandler extends NonStopIntentService implements
         removeService();
         WifiConfiguration configuration = new WifiConfiguration();
 
+        noPromptNetworkSsidExpected= (String)txtRecord.getRecord().get(Keys.NO_PROMPT_NETWORK_NAME);
+
         // Quotes around these are required
-        configuration.SSID = "\"" + txtRecord.getRecord().get(Keys.NO_PROMPT_NETWORK_NAME) + "\"";
+        configuration.SSID ="\"" + noPromptNetworkSsidExpected + "\"";
         configuration.preSharedKey = "\"" + txtRecord.getRecord().get(Keys.NO_PROMPT_NETWORK_PASS) + "\"";
+
         int netId = wifiManager.addNetwork(configuration);
 
         //disconnect form current network and connect to this one
@@ -812,6 +831,29 @@ public class WifiDirectHandler extends NonStopIntentService implements
         wifiManager.reconnect();
         Log.i(TAG, "Connected to no prompt network");
     }
+
+
+    /**
+     * Getting currently connected network SSID so that the connection can be checked
+     * if it is NoPrompt connection or not.
+     * @return ssid current connected hotspot SSID
+     */
+    private String  getCurrentConnectedSSID() {
+        String ssid=null;
+        ConnectivityManager connManager = (ConnectivityManager)getSystemService(Context.CONNECTIVITY_SERVICE);
+        NetworkInfo networkInfo = connManager.getNetworkInfo(ConnectivityManager.TYPE_WIFI);
+
+        if (networkInfo.isConnected()) {
+
+            WifiManager wifiManager = (WifiManager)getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+            WifiInfo connectionInfo = wifiManager.getConnectionInfo();
+            ssid= connectionInfo.getSSID().replace("\"", "");
+
+        }
+
+        return ssid;
+    }
+
 
     /**
      * Connect to a no prompt service using the DnsSdService. The SSID and passphrase are in fact
@@ -857,7 +899,37 @@ public class WifiDirectHandler extends NonStopIntentService implements
         } else if (WifiManager.WIFI_STATE_CHANGED_ACTION.equals(action)) {
             handleWifiStateChanged(intent);
         } else if (WifiManager.SCAN_RESULTS_AVAILABLE_ACTION.equals(action)) {
-            handleScanResultsAvailable(intent);
+            //This causes problems connecting to a no prompt network - temporarily commenting it out
+            //handleScanResultsAvailable(intent);
+        }else if(ConnectivityManager.CONNECTIVITY_ACTION.equals(action)){
+            //handle connection (Successfully connected/disconnected)
+            handleConnectivityAction(intent);
+        }
+    }
+
+    private void handleConnectivityAction(Intent intent){
+        Log.i(TAG, "Wi-Fi connectivity action");
+        if(noPromptNetworkSsidExpected != null) {
+            ConnectivityManager connectivityManager = (ConnectivityManager)getSystemService(Context.CONNECTIVITY_SERVICE);
+            NetworkInfo networkInfo = connectivityManager.getActiveNetworkInfo();
+            /*
+             When connecting to a no prompt network the connectivity_action intent will be fired. The
+             first intent received after attempting to connect is therefor the result of attempting to
+             connect.
+             */
+            boolean noPromptSuccess = false;
+
+            if(networkInfo != null && networkInfo.getType() == ConnectivityManager.TYPE_WIFI && networkInfo.isConnected()) {
+                noPromptSuccess = getCurrentConnectedSSID().equals(noPromptNetworkSsidExpected);
+            }
+
+            Log.i(TAG, "Attempt to connect to no prompt group: "
+                    + (noPromptSuccess ? "succeeded" : "failed"));
+            noPromptNetworkSsidExpected = null;
+
+            Intent connectionIntent = new Intent(Action.NOPROMPT_NETWORK_CONNECTIVITY_ACTION);
+            connectionIntent.putExtra(EXTRA_NOPROMPT_NETWORK_SUCCEEDED, noPromptSuccess);
+            localBroadcastManager.sendBroadcast(connectionIntent);
         }
     }
 
@@ -882,6 +954,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
         localBroadcastManager.sendBroadcast(new Intent(Action.WIFI_STATE_CHANGED));
     }
 
+    /*
     private void handleScanResultsAvailable(Intent intent) {
         Log.i(TAG, "Wi-Fi scan results available");
         wifiScanResults = wifiManager.getScanResults();
@@ -900,6 +973,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
         registerReceiver(wifiBroadcastReceiver, intentFilter);
         Log.i(TAG, "Wi-Fi BroadcastReceiver registered");
     }
+    */
 
     /**
      * The list of discovered peers has changed
@@ -998,6 +1072,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
      * Sticky Intent
      * @param intent
      */
+
     private void handleP2pStateChanged(Intent intent) {
         Log.i(TAG, "Wi-Fi P2P State Changed:");
         int state = intent.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -1);
@@ -1119,7 +1194,8 @@ public class WifiDirectHandler extends NonStopIntentService implements
                 DEVICE_CHANGED = "deviceChanged",
                 MESSAGE_RECEIVED = "messageReceived",
                 WIFI_STATE_CHANGED = "wifiStateChanged",
-                COMMUNICATION_DISCONNECTED = "communicationDisconnected";
+                COMMUNICATION_DISCONNECTED = "communicationDisconnected",
+                NOPROMPT_NETWORK_CONNECTIVITY_ACTION ="noPromptNetworkConnectivityAction";
     }
 
     private class Keys {
