@@ -1,7 +1,6 @@
 package edu.rit.se.wifibuddy;
 
 import android.net.wifi.p2p.WifiP2pDevice;
-
 import java.util.Map;
 
 /**
@@ -19,7 +18,7 @@ public class DnsSdTxtRecord {
         this.device = device;
     }
 
-    public Map getRecord() {
+    public Map<String,String> getRecord() {
         return record;
     }
 
