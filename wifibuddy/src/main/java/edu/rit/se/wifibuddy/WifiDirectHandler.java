@@ -95,6 +95,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
 
     private WifiP2pDevice thisDevice;
     private WifiP2pGroup wifiP2pGroup;
+    private WifiP2pInfo wifiP2pInfo;
     private List<ScanResult> wifiScanResults;
 
 
@@ -335,6 +336,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
         Log.i(TAG, p2pInfoToString(wifiP2pInfo));
         this.groupFormed = wifiP2pInfo.groupFormed;
         this.isGroupOwner = wifiP2pInfo.isGroupOwner;
+        this.wifiP2pInfo=wifiP2pInfo;
 
         if (wifiP2pInfo.groupFormed) {
             if(stopDiscoveryAfterGroupFormed){
@@ -1423,6 +1425,10 @@ public class WifiDirectHandler extends NonStopIntentService implements
     }
     public WifiP2pGroup getWifiP2pGroup(){
         return this.wifiP2pGroup;
+    }
+
+    public WifiP2pInfo getWifiP2pInfo(){
+        return wifiP2pInfo;
     }
 
     public CommunicationManager getCommunicationManager() {
