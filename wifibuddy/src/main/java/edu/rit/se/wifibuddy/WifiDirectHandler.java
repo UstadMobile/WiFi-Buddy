@@ -358,6 +358,8 @@ public class WifiDirectHandler extends NonStopIntentService implements
                 socketHandler.start();
             }
 
+
+
         } else {
 
             Log.w(TAG, "Group not formed");
@@ -838,6 +840,10 @@ public class WifiDirectHandler extends NonStopIntentService implements
                 public void onSuccess() {
                     setNoPromptServiceStatus(NOPROMPT_STATUS_GROUP_CREATED);
                     Log.i(TAG, "Group created successfully");
+                    if(noPromptActionListener!=null && !addLocalService){
+                        noPromptActionListener.onSuccess();
+                        WifiDirectHandler.this.noPromptActionListener = null;
+                    }
                     //Note that you will have to wait for WIFI_P2P_CONNECTION_CHANGED_INTENT for group info
                     //The next stage is handled by onGroupInfoAvailable triggered by connection change
                 }
