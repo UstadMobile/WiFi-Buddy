@@ -625,6 +625,34 @@ public class WifiDirectHandler extends NonStopIntentService implements
                 @Override
                 public void onFailure(int reason) {
                     Log.e(TAG, "Failure initiating service discovery: " + FailureReason.fromInteger(reason).toString());
+
+                    if (reason == WifiP2pManager.NO_SERVICE_REQUESTS) {
+                        // initiate a stop on service discovery
+                        wifiP2pManager.stopPeerDiscovery(channel, new WifiP2pManager.ActionListener() {
+                            @Override
+                            public void onSuccess() {
+                                // initiate clearing of the all service requests
+                                wifiP2pManager.clearServiceRequests(channel, new WifiP2pManager.ActionListener() {
+                                    @Override
+                                    public void onSuccess() {
+                                        // reset the service listeners, service requests, and discovery
+                                        discoverServices();
+                                    }
+
+                                    @Override
+                                    public void onFailure(int i) {
+                                        Log.d(TAG, "FAILED to clear service requests ");
+                                    }
+                                });
+
+                            }
+
+                            @Override
+                            public void onFailure(int i) {
+                                Log.d(TAG, "FAILED to stop discovery");
+                            }
+                        });
+                    }
                 }
             });
         }else{
