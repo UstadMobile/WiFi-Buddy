@@ -557,7 +557,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
         }
     }
 
-    private void addServiceDiscoveryRequest() {
+    private void addServiceDiscoveryRequest(@Nullable final WifiP2pManager.ActionListener listener) {
         if(wifiP2pManager!=null){
             serviceRequest = WifiP2pDnsSdServiceRequest.newInstance();
 
@@ -566,12 +566,16 @@ public class WifiDirectHandler extends NonStopIntentService implements
                 @Override
                 public void onSuccess() {
                     Log.i(TAG, "Service discovery request added");
+                    if(listener != null)
+                        listener.onSuccess();
                 }
 
                 @Override
                 public void onFailure(int reason) {
                     Log.e(TAG, "Failure adding service discovery request: " + FailureReason.fromInteger(reason).toString());
                     serviceRequest = null;
+                    if(listener != null)
+                        listener.onFailure(reason);
                 }
             });
         }else{
@@ -625,34 +629,6 @@ public class WifiDirectHandler extends NonStopIntentService implements
                 @Override
                 public void onFailure(int reason) {
                     Log.e(TAG, "Failure initiating service discovery: " + FailureReason.fromInteger(reason).toString());
-
-                    if (reason == WifiP2pManager.NO_SERVICE_REQUESTS) {
-                        // initiate a stop on service discovery
-                        wifiP2pManager.stopPeerDiscovery(channel, new WifiP2pManager.ActionListener() {
-                            @Override
-                            public void onSuccess() {
-                                // initiate clearing of the all service requests
-                                wifiP2pManager.clearServiceRequests(channel, new WifiP2pManager.ActionListener() {
-                                    @Override
-                                    public void onSuccess() {
-                                        // reset the service listeners, service requests, and discovery
-                                        discoverServices();
-                                    }
-
-                                    @Override
-                                    public void onFailure(int i) {
-                                        Log.d(TAG, "FAILED to clear service requests ");
-                                    }
-                                });
-
-                            }
-
-                            @Override
-                            public void onFailure(int i) {
-                                Log.d(TAG, "FAILED to stop discovery");
-                            }
-                        });
-                    }
                 }
             });
         }else{
@@ -677,13 +653,23 @@ public class WifiDirectHandler extends NonStopIntentService implements
         if (isDiscovering){
             Log.w(TAG, "Services are still discovering, do not need to make this call");
         } else {
-            addServiceDiscoveryRequest();
-            isDiscovering = true;
-            // List to track discovery tasks in progress
-            serviceDiscoveryTasks = new ArrayList<>();
-            // Make discover call and first discover task submission
-            discoverServices();
-            submitServiceDiscoveryTask();
+            addServiceDiscoveryRequest(new WifiP2pManager.ActionListener() {
+                @Override
+                public void onSuccess() {
+                    isDiscovering = true;
+                    // List to track discovery tasks in progress
+                    serviceDiscoveryTasks = new ArrayList<>();
+                    // Make discover call and first discover task submission
+                    discoverServices();
+                    submitServiceDiscoveryTask();
+                }
+
+                @Override
+                public void onFailure(int reason) {
+                    Log.e(TAG, "Error adding service discovery request: " + FailureReason.fromInteger(reason));
+                }
+            });
+
         }
     }
 
@@ -1040,10 +1026,12 @@ public class WifiDirectHandler extends NonStopIntentService implements
         } else if (wifiState == WifiManager.WIFI_STATE_DISABLED) {
             // Remove local service, unregister app with Wi-Fi P2P framework, unregister P2pReceiver
             Log.i(TAG, "Wi-Fi disabled");
+            stopServiceDiscovery();
             clearServiceDiscoveryRequests();
             if (wifiP2pServiceInfo != null) {
                 removeService();
             }
+            serviceDiscoveryRegistered = false;
             unregisterP2pReceiver();
             unregisterP2p();
         }
