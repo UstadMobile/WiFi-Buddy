@@ -1032,6 +1032,21 @@ public class WifiDirectHandler extends NonStopIntentService implements
                 removeService();
             }
             serviceDiscoveryRegistered = false;
+            removeGroup(new WifiP2pManager.ActionListener() {
+                @Override
+                public void onSuccess() {
+                    Log.i(TAG, "Remove group success reported after wifi disabled,");
+                }
+
+                @Override
+                public void onFailure(int i) {
+                    Log.i(TAG, "Remove group failure reported after wifi disabled - but its gone");
+                    wifiP2pGroup = null;
+                    groupFormed = false;
+                    isGroupOwner = false;
+                }
+            });
+            removePersistentGroups();
             unregisterP2pReceiver();
             unregisterP2p();
         }
