@@ -562,22 +562,36 @@ public class WifiDirectHandler extends NonStopIntentService implements
             serviceRequest = WifiP2pDnsSdServiceRequest.newInstance();
 
             // Tell the framework we want to scan for services. Prerequisite for discovering services
-            wifiP2pManager.addServiceRequest(channel, serviceRequest, new WifiP2pManager.ActionListener() {
+            wifiP2pManager.clearServiceRequests(channel, new WifiP2pManager.ActionListener() {
                 @Override
                 public void onSuccess() {
-                    Log.i(TAG, "Service discovery request added");
-                    if(listener != null)
-                        listener.onSuccess();
+                    wifiP2pManager.addServiceRequest(channel, serviceRequest, new WifiP2pManager.ActionListener() {
+                        @Override
+                        public void onSuccess() {
+                            Log.i(TAG, "Service discovery request added");
+                            if(listener != null)
+                                listener.onSuccess();
+                        }
+
+                        @Override
+                        public void onFailure(int reason) {
+                            Log.e(TAG, "Failure adding service discovery request: " + FailureReason.fromInteger(reason).toString());
+                            serviceRequest = null;
+                            if(listener != null)
+                                listener.onFailure(reason);
+                        }
+                    });
                 }
 
                 @Override
                 public void onFailure(int reason) {
-                    Log.e(TAG, "Failure adding service discovery request: " + FailureReason.fromInteger(reason).toString());
+                    Log.e(TAG, "Failure clearing service requests: " + FailureReason.fromInteger(reason).toString());
                     serviceRequest = null;
                     if(listener != null)
                         listener.onFailure(reason);
                 }
             });
+
         }else{
             Log.e(TAG,"WifiDirectHandler: addServiceDiscoveryRequest: wifip2pManager is null");
         }
@@ -701,7 +715,9 @@ public class WifiDirectHandler extends NonStopIntentService implements
      */
     private void submitServiceDiscoveryTask(){
         Log.i(TAG, "Submitting service discovery task");
-        // Discover times out after 2 minutes so we set the timer to that
+        // Discover times out after 2 minutes... but running discovery only every 2mins results in
+        // long delays on various models. So we set this to the same time as the service rebroadcast
+        // ... recommended 30s
         int timeToWait = serviceRebroadcastingTimer;
         ServiceDiscoveryTask serviceDiscoveryTask = new ServiceDiscoveryTask();
         Timer timer = new Timer();
@@ -847,7 +863,6 @@ public class WifiDirectHandler extends NonStopIntentService implements
             setNoPromptServiceStatus(NOPROMPT_STATUS_GROUP_REQUESTED);
             noPromptServiceData = serviceData;
             noPromptActionListener = actionListener;
-
 
             wifiP2pManager.createGroup(channel, new WifiP2pManager.ActionListener() {
                 @Override
