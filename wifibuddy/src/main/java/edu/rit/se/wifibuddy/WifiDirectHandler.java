@@ -21,6 +21,7 @@ import android.net.wifi.p2p.nsd.WifiP2pDnsSdServiceRequest;
 import android.net.wifi.p2p.nsd.WifiP2pServiceInfo;
 import android.net.wifi.p2p.nsd.WifiP2pServiceRequest;
 import android.os.Binder;
+import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Message;
@@ -154,6 +155,9 @@ public class WifiDirectHandler extends NonStopIntentService implements
 
     private Runnable postedPeerDiscoveryRunnable = null;
 
+    private WifiP2pDeviceList wifiP2pDeviceList;
+
+    private Object wifiP2pDeviceLock = new Object();
 
 
     /**
@@ -1144,6 +1148,10 @@ public class WifiDirectHandler extends NonStopIntentService implements
             wifiP2pManager.requestPeers(channel, new WifiP2pManager.PeerListListener() {
                 @Override
                 public void onPeersAvailable(WifiP2pDeviceList peers) {
+                    synchronized (wifiP2pDeviceLock) {
+                        wifiP2pDeviceList = peers;
+                    }
+
                     Intent intent = new Intent(Action.PEERS_CHANGED);
                     intent.putExtra(Extra.PEERS, peers);
                     localBroadcastManager.sendBroadcast(intent);
@@ -1563,6 +1571,29 @@ public class WifiDirectHandler extends NonStopIntentService implements
 
     public int getServiceStatus(){
         return serviceStatus;
+    }
+
+    public WifiP2pDevice getPeerByDeviceAddress(String deviceAddress) {
+        synchronized (wifiP2pDeviceLock) {
+            if(wifiP2pDeviceList != null) {
+                if(Build.VERSION.SDK_INT >= 18) {
+                    return wifiP2pDeviceList.get(deviceAddress);
+                }else {
+                    for(WifiP2pDevice device : wifiP2pDeviceList.getDeviceList()) {
+                        if(device.deviceAddress != null && device.deviceAddress.equals(deviceAddress))
+                            return device;
+                    }
+
+                    return null;
+                }
+            }else {
+                return null;
+            }
+        }
+    }
+
+    public WifiP2pDeviceList getWifiP2pDeviceList() {
+        return wifiP2pDeviceList;
     }
 
 }
