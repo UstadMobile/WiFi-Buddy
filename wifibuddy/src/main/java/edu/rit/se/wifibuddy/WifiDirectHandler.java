@@ -99,9 +99,9 @@ public class WifiDirectHandler extends NonStopIntentService implements
     private List<ScanResult> wifiScanResults;
 
 
-    //handle restating of the broadcasting task.
-    private int serviceRebroadcastingTimer =30000;
-    private Handler serviceRebroadcastingHandler=new Handler();
+    //handle running peer discovery on an interval. Also required to rebroadcast any local service
+    private int peerDiscoveryInterval =30000;
+    private Handler peerDiscoveryHandler =new Handler();
 
     /**
      * A no prompt network was created and it has been detected that the network has timed out and
@@ -148,31 +148,60 @@ public class WifiDirectHandler extends NonStopIntentService implements
 
     public static final int NOPROMPT_STATUS_FAILED_ADDING_LOCAL_SERVICE = 21;
 
+    private boolean isDiscoveringPeers = false;
+
+    private Object peerDiscoveryLock = new Object();
+
+    private Runnable postedPeerDiscoveryRunnable = null;
+
+
+
     /**
-     * Adding a local service sends out UDP broadcasts. Periodically calling discoverPeers is
-     * apparently needed to force rebroadcasting the service so it can be reliably discovered
+     * Peer discovery runnable. This serves two purposes. It can be used to discover peers, if
+     * required.
+     *
+     * Secondly adding a local service requires periodic UDP broadcasts for other devices to see it.
+     * Calling discoverPeers is apparently needed to force rebroadcasting the service so it can be
+     * reliably discovered.
+     *
      * see: http://stackoverflow.com/questions/26300889/wifi-p2p-service-discovery-works-intermittently
      */
-    private Runnable serviceRebroadcastingRunnable =new Runnable() {
+    private Runnable peerDiscoveryRunnable =new Runnable() {
+
+        WifiP2pManager.ActionListener peerDiscoveryActionListener;
+
         @Override
         public void run() {
-            if(wifiP2pManager!=null){
-                Log.d(TAG,"Service rebroadcast kick - requesting");
-                wifiP2pManager.discoverPeers(channel, new WifiP2pManager.ActionListener() {
-                    @Override
-                    public void onSuccess() {
-                        Log.i(TAG, "Service rebroadcast kick - onSuccess");
-                    }
+            synchronized (peerDiscoveryLock) {
+                boolean peerDiscoveryRequired = isPeerDiscoveryRequired();
+                postedPeerDiscoveryRunnable = null;
 
-                    @Override
-                    public void onFailure(int reason) {
-                        Log.i(TAG, "Service rebroadcast kick - onFailure: " +
-                                FailureReason.fromInteger(reason));
-                    }
-                });
+                if(wifiP2pManager!= null && peerDiscoveryRequired){
+                    Log.d(TAG,"Service rebroadcast kick - requesting");
+                    wifiP2pManager.discoverPeers(channel, new WifiP2pManager.ActionListener() {
+                        @Override
+                        public void onSuccess() {
+                            Log.i(TAG, "Service rebroadcast kick - onSuccess");
+                        }
 
-                serviceRebroadcastingHandler.postDelayed(
-                        serviceRebroadcastingRunnable, serviceRebroadcastingTimer);
+                        @Override
+                        public void onFailure(int reason) {
+                            Log.i(TAG, "Service rebroadcast kick - onFailure: " +
+                                    FailureReason.fromInteger(reason));
+                        }
+                    });
+
+                }else {
+                    Log.w(TAG, "discoverPeersRunnable: wifiP2pManager is null or discovery not required");
+                }
+
+                if(peerDiscoveryRequired){
+                    postedPeerDiscoveryRunnable = peerDiscoveryRunnable;
+                    peerDiscoveryHandler.postDelayed(
+                            peerDiscoveryRunnable, peerDiscoveryInterval);
+                }else {
+                    Log.i(TAG, "discoverPeersRunnable: peer discovery no longer required.");
+                }
             }
 
         }
@@ -394,8 +423,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
                                 actionListener.onSuccess();
                             serviceStatus=NORMAL_SERVICE_STATUS_ACTIVE;
                             localBroadcastManager.sendBroadcast(new Intent(Action.NOPROMPT_SERVICE_CREATED_ACTION));
-                            serviceRebroadcastingHandler.postDelayed(
-                                    serviceRebroadcastingRunnable, serviceRebroadcastingTimer);
+                            discoverPeers();//call discoverPeers to make sure broadcasting gets kicked
 
                         }
                         @Override
@@ -610,12 +638,13 @@ public class WifiDirectHandler extends NonStopIntentService implements
     }
 
     /**
-     * Set preferred service discovery rebroadcasting time, by default
-     * serviceRebroadcastingTimer=30000ms
-     * @param rebroadcastingTime
+     * Set the interval at which peer discovery is called. This effects both continuouslyDiscoverPeers
+     * and rebroadcasting any local services.
+     *
+     * @param peerDiscoveryInterval
      */
-    public void setServiceDiscoveryRebroadcastingTime(int rebroadcastingTime){
-        this.serviceRebroadcastingTimer=rebroadcastingTime;
+    public void setPeerDiscoveryInterval(int peerDiscoveryInterval){
+        this.peerDiscoveryInterval = peerDiscoveryInterval;
     }
 
     /**
@@ -687,6 +716,45 @@ public class WifiDirectHandler extends NonStopIntentService implements
         }
     }
 
+    public void continuouslyDiscoverPeers() {
+        if(!isDiscoveringPeers) {
+            Log.i(TAG, "Continuously discover peers: starting");
+            isDiscoveringPeers = true;
+            discoverPeers();
+        }else {
+            Log.i(TAG, "Continuously discover peers, already discovering.");
+        }
+    }
+
+    public void discoverPeers() {
+        synchronized (peerDiscoveryLock) {
+            if(this.postedPeerDiscoveryRunnable == null && isPeerDiscoveryRequired()) {
+                postedPeerDiscoveryRunnable = peerDiscoveryRunnable;
+                peerDiscoveryHandler.postDelayed(
+                        peerDiscoveryRunnable, peerDiscoveryInterval);
+                Log.i(TAG, "discoverPeers: posted runnable for peer discovery");
+            }else if(!isPeerDiscoveryRequired()){
+                Log.i(TAG, "discoverPeers: peer discovery not required");
+            }else if(postedPeerDiscoveryRunnable != null) {
+                Log.i(TAG, "discoverPeers: post peer discovery runnable not null, no need to post again");
+            }
+        }
+    }
+
+    private boolean isPeerDiscoveryRequired() {
+        synchronized (peerDiscoveryLock) {
+            return isDiscoveringPeers || wifiP2pServiceInfo != null;
+        }
+    }
+
+    public void stopPeerDiscovery() {
+        synchronized (peerDiscoveryLock) {
+            Log.i(TAG, "stopPeerDiscovery");
+            isDiscoveringPeers = false;
+        }
+    }
+
+
     public void stopServiceDiscovery() {
         Log.i(TAG, "Stopping service discovery");
         if (isDiscovering) {
@@ -718,7 +786,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
         // Discover times out after 2 minutes... but running discovery only every 2mins results in
         // long delays on various models. So we set this to the same time as the service rebroadcast
         // ... recommended 30s
-        int timeToWait = serviceRebroadcastingTimer;
+        int timeToWait = peerDiscoveryInterval;
         ServiceDiscoveryTask serviceDiscoveryTask = new ServiceDiscoveryTask();
         Timer timer = new Timer();
         // Submit the service discovery task and add it to the list
@@ -1042,6 +1110,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
             // Remove local service, unregister app with Wi-Fi P2P framework, unregister P2pReceiver
             Log.i(TAG, "Wi-Fi disabled");
             stopServiceDiscovery();
+            stopPeerDiscovery();
             clearServiceDiscoveryRequests();
             if (wifiP2pServiceInfo != null) {
                 removeService();
