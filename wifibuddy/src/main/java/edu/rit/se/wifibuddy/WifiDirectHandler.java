@@ -1145,7 +1145,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
                 @Override
                 public void onPeersAvailable(WifiP2pDeviceList peers) {
                     Intent intent = new Intent(Action.PEERS_CHANGED);
-                    intent.putExtra(PEERS, peers);
+                    intent.putExtra(Extra.PEERS, peers);
                     localBroadcastManager.sendBroadcast(intent);
                 }
             });
@@ -1362,6 +1362,11 @@ public class WifiDirectHandler extends NonStopIntentService implements
                 NOPROMPT_GROUP_CREATION_ACTION ="noPromptNetworkGroupCreationAction",
                 NOPROMPT_SERVICE_CREATED_ACTION = "noPromptServiceCreatedAction";
     }
+
+    public class Extra {
+        public static final String PEERS = "peers";
+    }
+
 
     private class Keys {
         public static final String NO_PROMPT_NETWORK_NAME = "networkName",

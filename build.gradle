@@ -14,7 +14,7 @@ buildscript {
 
 
 ext {
-    wifiBuddyVersion = "1.1.29-SNAPSHOT"
+    wifiBuddyVersion = "1.1.30-SNAPSHOT"
 }
 
 ext.buildConfigProperties = new Properties()
