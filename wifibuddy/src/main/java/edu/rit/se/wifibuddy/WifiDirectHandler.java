@@ -1453,25 +1453,43 @@ public class WifiDirectHandler extends NonStopIntentService implements
 
     /**
      * Connect device to normal WiFi-Direct without group
-     * @param deviceMacAddress
+     *
+     * @param deviceMacAddress The mac address of the device to connect to. For some reason this seems
+     *                         to be case sensitive (kept in lower case).
+     * @param groupOwnerIntent A integer between 0 and 15. 0 = Almost certain to be a client,
+     *                         15 = Become group owner. Pass -1 to skip setting this parameter.
      */
-    public void connectToNormalWifiDirect(String deviceMacAddress){
+    public void connectToNormalWifiDirect(final String deviceMacAddress, int groupOwnerIntent){
         WifiP2pConfig config = new WifiP2pConfig();
         config.deviceAddress = deviceMacAddress;
         config.wps.setup = WpsInfo.PBC;
+        if(groupOwnerIntent >= 0) {
+            config.groupOwnerIntent = groupOwnerIntent;
+        }
 
+        Log.i(TAG, "WiFi direct: connecting using 'normal' wifi direct to : " + deviceMacAddress);
         wifiP2pManager.connect(channel, config, new WifiP2pManager.ActionListener() {
             @Override
             public void onSuccess() {
-                Log.d(TAG,"WiFi Direct connection succeeded");
+                Log.d(TAG,"WiFi Direct connection to " + deviceMacAddress + " succeeded");
             }
 
             @Override
             public void onFailure(int reason) {
-                Log.e(TAG,"Device connection failed "+FailureReason.fromInteger(reason));
+                Log.e(TAG,"Device connection to " + deviceMacAddress + "failed "
+                        +FailureReason.fromInteger(reason));
             }
         });
+    }
 
+    /**
+     * Connect device to normal WiFi-Direct without group
+     *
+     * @param deviceMacAddress The mac address of the device to connect to. For some reason this seems
+     *                         to be case sensitive (kept in lower case).
+     */
+    public void connectToNormalWifiDirect(String deviceMacAddress) {
+        connectToNormalWifiDirect(deviceMacAddress, -1);
     }
 
     /**
