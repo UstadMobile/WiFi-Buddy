@@ -397,7 +397,9 @@ public class WifiDirectHandler extends NonStopIntentService implements
 
             Log.w(TAG, "Group not formed");
         }
-        localBroadcastManager.sendBroadcast(new Intent(Action.DEVICE_CHANGED));
+
+        //TODO: Add extras to this broadcast
+        localBroadcastManager.sendBroadcast(new Intent(Action.CONNECTION_INFO_AVAILABLE));
     }
 
     // TODO add JavaDoc
@@ -676,6 +678,16 @@ public class WifiDirectHandler extends NonStopIntentService implements
                 @Override
                 public void onFailure(int reason) {
                     Log.e(TAG, "Failure initiating service discovery: " + FailureReason.fromInteger(reason).toString());
+
+                    /*
+                     * Very rarely, and for no apparent reason, even if service requests have been
+                     * registered we can get a NO_SERVICE_REQUESTS error. In that case the best we
+                     * can try to do is to reset service discovery.
+                     */
+                    if(reason == WifiP2pManager.NO_SERVICE_REQUESTS && isDiscovering) {
+                        Log.w(TAG, "Detected failure due to NO_SERVICE_REQUESTS whilst isDiscovering. Resetting service discovery");
+                        resetServiceDiscovery();
+                    }
                 }
             });
         }else{
@@ -690,7 +702,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
     public void continuouslyDiscoverServices(){
         Log.i(TAG, "Continuously Discover services called");
 
-        if (serviceDiscoveryRegistered == false) {
+        if (!serviceDiscoveryRegistered) {
             Log.i(TAG, "Setting up service discovery");
             registerServiceDiscoveryListeners();
             serviceDiscoveryRegistered = true;
@@ -759,7 +771,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
     }
 
 
-    public void stopServiceDiscovery() {
+    public void stopServiceDiscovery(WifiP2pManager.ActionListener actionListener) {
         Log.i(TAG, "Stopping service discovery");
         if (isDiscovering) {
             dnsSdServiceMap = new HashMap<>();
@@ -771,14 +783,40 @@ public class WifiDirectHandler extends NonStopIntentService implements
             serviceDiscoveryTasks = null;
             isDiscovering = false;
             Log.i(TAG, "Service discovery stopped");
-            clearServiceDiscoveryRequests();
+            clearServiceDiscoveryRequests(actionListener);
+        }else {
+            Log.i(TAG, "Service discovery not running, nothing to stop");
+            if(actionListener != null)
+                actionListener.onSuccess();
         }
     }
 
-    public void resetServiceDiscovery() {
+    public void stopServiceDiscovery() {
+        stopServiceDiscovery(null);
+    }
+
+    public void resetServiceDiscovery(final WifiP2pManager.ActionListener listener) {
         Log.i(TAG, "Resetting service discovery");
-        stopServiceDiscovery();
-        continuouslyDiscoverServices();
+        stopServiceDiscovery(new WifiP2pManager.ActionListener() {
+            @Override
+            public void onSuccess() {
+                Log.i(TAG, "Reset service discovery - successfully stopped");
+                continuouslyDiscoverServices();
+                if(listener != null)
+                    listener.onSuccess();
+            }
+
+            @Override
+            public void onFailure(int reason) {
+                Log.i(TAG, "Reset service discovery - failed to stop");
+                if(listener != null)
+                    listener.onFailure(reason);
+            }
+        });
+    }
+
+    public void resetServiceDiscovery() {
+        resetServiceDiscovery(null);
     }
 
     /**
@@ -860,23 +898,31 @@ public class WifiDirectHandler extends NonStopIntentService implements
         }
     }
 
-    private void clearServiceDiscoveryRequests() {
+    private void clearServiceDiscoveryRequests(final WifiP2pManager.ActionListener actionListener) {
         if (serviceRequest != null && wifiP2pManager!=null) {
             wifiP2pManager.clearServiceRequests(channel, new WifiP2pManager.ActionListener() {
                 @Override
                 public void onSuccess() {
                     serviceRequest = null;
                     Log.i(TAG, "Service discovery requests cleared");
+                    if(actionListener != null)
+                        actionListener.onSuccess();
                 }
 
                 @Override
                 public void onFailure(int reason) {
                     Log.e(TAG, "Failure clearing service discovery requests: " + FailureReason.fromInteger(reason).toString());
+                    if(actionListener != null)
+                        actionListener.onFailure(reason);
                 }
             });
         }else{
             Log.e(TAG,"WifiDirectHandler: clearServiceDiscoveryRequests: wifip2pManager or serviceRequest might be null");
         }
+    }
+
+    private void clearServiceDiscoveryRequests() {
+        clearServiceDiscoveryRequests(null);
     }
 
 
@@ -1190,10 +1236,12 @@ public class WifiDirectHandler extends NonStopIntentService implements
         wifiP2pManager.requestGroupInfo(channel, new WifiP2pManager.GroupInfoListener() {
             @Override
             public void onGroupInfoAvailable(WifiP2pGroup wifiP2pGroup) {
+                WifiDirectHandler.this.wifiP2pGroup = wifiP2pGroup;
+                Log.i(TAG, "Group info available");
+                Log.i(TAG, "WifiP2pGroup:");
+                Log.i(TAG, p2pGroupToString(wifiP2pGroup));
                 if (wifiP2pGroup != null) {
-                    Log.i(TAG, "Group info available");
-                    Log.i(TAG, "WifiP2pGroup:");
-                    Log.i(TAG, p2pGroupToString(wifiP2pGroup));
+
                     WifiDirectHandler.this.wifiP2pGroup = wifiP2pGroup;
                     int noPromptServiceStatus = getNoPromptServiceStatus();
                     if(noPromptServiceStatus > NOPROMPT_STATUS_INACTIVE && noPromptServiceStatus < NOPROMPT_STATUS_ADDING_LOCAL_SERVICE) {
@@ -1231,11 +1279,10 @@ public class WifiDirectHandler extends NonStopIntentService implements
                         }else{
                             WifiDirectHandler.this.setNoPromptServiceStatus(NOPROMPT_STATUS_ACTIVE);
                         }
-
-                        //add intent
-                        localBroadcastManager.sendBroadcast(new Intent(Action.NOPROMPT_GROUP_CREATION_ACTION));
-
                     }
+
+                    //add intent
+                    localBroadcastManager.sendBroadcast(new Intent(Action.GROUP_INFO_AVAILABLE));
                 }
             }
         });
@@ -1285,6 +1332,10 @@ public class WifiDirectHandler extends NonStopIntentService implements
             wifiP2pManager.requestGroupInfo(channel, new WifiP2pManager.GroupInfoListener() {
                 @Override
                 public void onGroupInfoAvailable(WifiP2pGroup group) {
+                    if(WifiDirectHandler.this.wifiP2pGroup != null){
+
+                    }
+
                     if(group == null && WifiDirectHandler.this.getNoPromptServiceStatus() == NOPROMPT_STATUS_ACTIVE) {
                         Log.i(TAG, "handleThisDeviceChanged: Detected noprompt group timed out - recreating...");
                         localBroadcastManager.sendBroadcast(new Intent(Action.NOPROMPT_SERVICE_TIMEOUT_ACTION));
@@ -1367,8 +1418,9 @@ public class WifiDirectHandler extends NonStopIntentService implements
                 NOPROMPT_SERVICE_TIMEOUT_ACTION="noPromptServiceTimedOutAction",
                 WIFI_DIRECT_CONNECTION_CHANGED = "wifiDirectConnectionChange",
                 NOPROMPT_NETWORK_CONNECTIVITY_ACTION ="noPromptNetworkConnectivityAction",
-                NOPROMPT_GROUP_CREATION_ACTION ="noPromptNetworkGroupCreationAction",
-                NOPROMPT_SERVICE_CREATED_ACTION = "noPromptServiceCreatedAction";
+                GROUP_INFO_AVAILABLE ="groupInfoAvailableAction",
+                NOPROMPT_SERVICE_CREATED_ACTION = "noPromptServiceCreatedAction",
+                CONNECTION_INFO_AVAILABLE = "connectionInfoAvailable";
     }
 
     public class Extra {
@@ -1452,7 +1504,14 @@ public class WifiDirectHandler extends NonStopIntentService implements
     }
 
     /**
-     * Connect device to normal WiFi-Direct without group
+     * Connect device to WiFi-Direct "normally" (e.g. without using the legacy mode of connecting
+     * to a group).
+     *
+     * Listen for the Action.WIFI_DIRECT_CONNECTION_CHANGED broadcast to determine if the connection
+     * succeeded. It will contain a boolean EXTRA_WIFIDIRECT_CONNECTION_SUCCEEDED boolean set to true
+     * if the connection is successful. Shortly thereafter an Action.CONNECTION_INFO_AVAILABLE will
+     * be broadcast. This is when the wifip2pinfo will be updated, and when the group owner ip address
+     * etc. will be known.
      *
      * @param deviceMacAddress The mac address of the device to connect to. For some reason this seems
      *                         to be case sensitive (kept in lower case).
