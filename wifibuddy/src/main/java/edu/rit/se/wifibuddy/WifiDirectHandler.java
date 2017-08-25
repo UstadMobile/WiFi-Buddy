@@ -89,6 +89,8 @@ public class WifiDirectHandler extends NonStopIntentService implements
     public static final String EXTRA_NOPROMPT_NETWORK_SUCCEEDED="isNoPromptConnected";
     public static final String EXTRA_WIFIDIRECT_CONNECTION_SUCCEEDED="isNormalWiFiDirectConnected";
 
+    public static final String EXTRA_CONNECT_TO_NORMAL_WIFI_DIRECT_MAC_ADDR = "normalWifiDirectMacAddr";
+
     // Variables created in onCreate()
     private WifiP2pManager.Channel channel;
     private WifiP2pManager wifiP2pManager;
@@ -1333,7 +1335,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
                 @Override
                 public void onGroupInfoAvailable(WifiP2pGroup group) {
                     if(WifiDirectHandler.this.wifiP2pGroup != null){
-
+                        //this is really already taken care of in handleConnectionChanged
                     }
 
                     if(group == null && WifiDirectHandler.this.getNoPromptServiceStatus() == NOPROMPT_STATUS_ACTIVE) {
@@ -1420,7 +1422,8 @@ public class WifiDirectHandler extends NonStopIntentService implements
                 NOPROMPT_NETWORK_CONNECTIVITY_ACTION ="noPromptNetworkConnectivityAction",
                 GROUP_INFO_AVAILABLE ="groupInfoAvailableAction",
                 NOPROMPT_SERVICE_CREATED_ACTION = "noPromptServiceCreatedAction",
-                CONNECTION_INFO_AVAILABLE = "connectionInfoAvailable";
+                CONNECTION_INFO_AVAILABLE = "connectionInfoAvailable",
+                CONNECT_TO_NORMAL_WIFI_DIRECT_RESULT = "wifiDirectNormalResult";
     }
 
     public class Extra {
@@ -1507,11 +1510,23 @@ public class WifiDirectHandler extends NonStopIntentService implements
      * Connect device to WiFi-Direct "normally" (e.g. without using the legacy mode of connecting
      * to a group).
      *
-     * Listen for the Action.WIFI_DIRECT_CONNECTION_CHANGED broadcast to determine if the connection
-     * succeeded. It will contain a boolean EXTRA_WIFIDIRECT_CONNECTION_SUCCEEDED boolean set to true
-     * if the connection is successful. Shortly thereafter an Action.CONNECTION_INFO_AVAILABLE will
-     * be broadcast. This is when the wifip2pinfo will be updated, and when the group owner ip address
-     * etc. will be known.
+     * Listen for the broadcast of CONNECT_TO_NORMAL_WIFI_DIRECT_RESULT. This will contain two extras:
+     *  EXTRA_CONNECT_TO_NORMAL_WIFI_DIRECT_MAC_ADDR : the mac address the result is for
+     *  EXTRA_WIFIDIRECT_CONNECTION_SUCCEEDED : a boolean indicating if the connection was successful
+     *  (or not).
+     *
+     * Shortly thereafter an Action.CONNECTION_INFO_AVAILABLE will be broadcast. This is when the
+     * wifip2pinfo will be updated, and when the group owner and group owner IP address will be known.
+     *
+     * Finally an Action.GROUP_INFO_AVAILABLE will be broadcast. This is when information about other
+     * group members including their mac addresses and device names (but not IP addresses) will be
+     * available.
+     *
+     * This also triggers a Action.WIFI_DIRECT_CONNECTION_CHANGED broadcast . It will contain a boolean
+     * EXTRA_WIFIDIRECT_CONNECTION_SUCCEEDED boolean set to true if the connection is successful.
+     *
+     * On the other device, when the connection is successfully accepted, an
+     * Action.WIFI_DIRECT_CONNECTION_CHANGED and Action.CONNECTION_INFO_AVAILABLE will be broadcast.
      *
      * @param deviceMacAddress The mac address of the device to connect to. For some reason this seems
      *                         to be case sensitive (kept in lower case).
@@ -1526,17 +1541,24 @@ public class WifiDirectHandler extends NonStopIntentService implements
             config.groupOwnerIntent = groupOwnerIntent;
         }
 
+
+        final Intent resultIntent = new Intent(Action.CONNECT_TO_NORMAL_WIFI_DIRECT_RESULT);
+        resultIntent.putExtra(EXTRA_CONNECT_TO_NORMAL_WIFI_DIRECT_MAC_ADDR, deviceMacAddress);
         Log.i(TAG, "WiFi direct: connecting using 'normal' wifi direct to : " + deviceMacAddress);
         wifiP2pManager.connect(channel, config, new WifiP2pManager.ActionListener() {
             @Override
             public void onSuccess() {
                 Log.d(TAG,"WiFi Direct connection to " + deviceMacAddress + " succeeded");
+                resultIntent.putExtra(EXTRA_WIFIDIRECT_CONNECTION_SUCCEEDED, true);
+                localBroadcastManager.sendBroadcast(resultIntent);
             }
 
             @Override
             public void onFailure(int reason) {
                 Log.e(TAG,"Device connection to " + deviceMacAddress + "failed "
                         +FailureReason.fromInteger(reason));
+                resultIntent.putExtra(EXTRA_WIFIDIRECT_CONNECTION_SUCCEEDED, false);
+                localBroadcastManager.sendBroadcast(resultIntent);
             }
         });
     }
