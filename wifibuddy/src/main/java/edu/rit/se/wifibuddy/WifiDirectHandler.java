@@ -91,6 +91,8 @@ public class WifiDirectHandler extends NonStopIntentService implements
 
     public static final String EXTRA_CONNECT_TO_NORMAL_WIFI_DIRECT_MAC_ADDR = "normalWifiDirectMacAddr";
 
+    public static final String EXTRA_CANCEL_CONNECT_TO_NORMAL_WIFI_DIRECT_SUCCEEDED = "isCancelled";
+
     // Variables created in onCreate()
     private WifiP2pManager.Channel channel;
     private WifiP2pManager wifiP2pManager;
@@ -1423,7 +1425,8 @@ public class WifiDirectHandler extends NonStopIntentService implements
                 GROUP_INFO_AVAILABLE ="groupInfoAvailableAction",
                 NOPROMPT_SERVICE_CREATED_ACTION = "noPromptServiceCreatedAction",
                 CONNECTION_INFO_AVAILABLE = "connectionInfoAvailable",
-                CONNECT_TO_NORMAL_WIFI_DIRECT_RESULT = "wifiDirectNormalResult";
+                CONNECT_TO_NORMAL_WIFI_DIRECT_RESULT = "wifiDirectNormalResult",
+                CANCEL_CONNECT_TO_NORMAL_WIFI_DIRECT_RESULT = "cancelWifiDirectNormalResult";
     }
 
     public class Extra {
@@ -1571,6 +1574,36 @@ public class WifiDirectHandler extends NonStopIntentService implements
      */
     public void connectToNormalWifiDirect(String deviceMacAddress) {
         connectToNormalWifiDirect(deviceMacAddress, -1);
+    }
+
+    /**
+     * Cancel any ongoing creation / negotiation of a wifi p2p group as per the WifiP2pManager
+     * cancelConnect method.
+     *
+     * Action.CANCEL_CONNECT_TO_NORMAL_WIFI_DIRECT_RESULT with the extras:
+     *    EXTRA_CANCEL_CONNECT_TO_NORMAL_WIFI_DIRECT_SUCCEEDED - Boolean for succeess/fail.
+     *
+     */
+    public void cancelConnectToNormalWifiDirect() {
+        Log.i(TAG, "cancelConnectToNormalWifiDirect");
+        final Intent resultIntent = new Intent(Action.CANCEL_CONNECT_TO_NORMAL_WIFI_DIRECT_RESULT);
+        wifiP2pManager.cancelConnect(channel, new WifiP2pManager.ActionListener() {
+            @Override
+            public void onSuccess() {
+                Log.i(TAG, "cancelConnectToNormalWifiDirect : succeeded");
+                resultIntent.putExtra(EXTRA_CANCEL_CONNECT_TO_NORMAL_WIFI_DIRECT_SUCCEEDED,
+                        true);
+                localBroadcastManager.sendBroadcast(resultIntent);
+            }
+
+            @Override
+            public void onFailure(int i) {
+                Log.i(TAG, "cancelConnectToNormalWifiDirect :failed");
+                resultIntent.putExtra(EXTRA_CANCEL_CONNECT_TO_NORMAL_WIFI_DIRECT_SUCCEEDED,
+                        false);
+                localBroadcastManager.sendBroadcast(resultIntent);
+            }
+        });
     }
 
     /**
