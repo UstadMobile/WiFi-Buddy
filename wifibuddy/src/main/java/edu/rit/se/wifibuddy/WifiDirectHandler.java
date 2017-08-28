@@ -490,7 +490,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
      * the hidden method. We can list all the methods in WifiP2pManager and invoke "deletePersistentGroup"
      * if it exists. This is used to remove all possible persistent/remembered groups.
      */
-    private void removePersistentGroups() {
+    public void removePersistentGroups() {
         if(wifiP2pManager!=null){
             try {
                 Method[] methods = WifiP2pManager.class.getMethods();
