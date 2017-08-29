@@ -512,6 +512,42 @@ public class WifiDirectHandler extends NonStopIntentService implements
     }
 
     /**
+     * Set the wifi direct channels to use. This uses a method call which is hidden and invoked
+     * via reflection. By default Android listens and operates only on channel 1.
+     *
+     * See:: source from
+     *  https://android.googlesource.com/platform/frameworks/base/+/refs/heads/master/wifi/java/android/net/wifi/p2p/WifiP2pManager.java
+     *
+     * @param listeningChannel
+     * @param operatingChannel
+     */
+    public void setWifiDirectChannel(final int listeningChannel, final int operatingChannel) {
+        try {
+            Method setWifiP2pChannels = wifiP2pManager.getClass().getMethod("setWifiP2pChannels",
+                    WifiP2pManager.Channel.class, int.class, int.class,
+                    WifiP2pManager.ActionListener.class);
+            setWifiP2pChannels.invoke(wifiP2pManager, channel, listeningChannel, operatingChannel,
+                    new WifiP2pManager.ActionListener() {
+                @Override
+                public void onSuccess() {
+                    Log.d(TAG, "Changed channel (" + listeningChannel + "/" + operatingChannel +
+                            ") succeeded");
+                }
+
+                @Override
+                public void onFailure(int reason) {
+                    Log.d(TAG, "Changed channel (" + listeningChannel + "/" +operatingChannel +
+                            ")  failed");
+                }
+            });
+
+        }catch(Exception e) {
+            Log.e(TAG, "Exception attempting to invoke change channel to " + listeningChannel
+                    + "/" + operatingChannel, e);
+        }
+    }
+
+    /**
      * Removes the current WifiP2pGroup in the WifiP2pChannel.
      */
     public void removeGroup(final @Nullable WifiP2pManager.ActionListener actionListener) {
