@@ -198,7 +198,6 @@ public class WifiDirectHandler extends NonStopIntentService implements
                                     FailureReason.fromInteger(reason));
                         }
                     });
-
                 }else {
                     Log.w(TAG, "discoverPeersRunnable: wifiP2pManager is null or discovery not required");
                 }
@@ -433,9 +432,9 @@ public class WifiDirectHandler extends NonStopIntentService implements
                                 actionListener.onSuccess();
                             serviceStatus=NORMAL_SERVICE_STATUS_ACTIVE;
                             localBroadcastManager.sendBroadcast(new Intent(Action.NOPROMPT_SERVICE_CREATED_ACTION));
-                            discoverPeers();//call discoverPeers to make sure broadcasting gets kicked
-
+                            discoverPeers(peerDiscoveryInterval);//call discoverPeers to make sure broadcasting gets kicked
                         }
+
                         @Override
                         public void onFailure(int reason) {
                             Log.e(TAG, "Failure adding local service: " + FailureReason.fromInteger(reason).toString());
@@ -746,12 +745,17 @@ public class WifiDirectHandler extends NonStopIntentService implements
         }
     }
 
-    public void discoverPeers() {
+    /**
+     * Start discovering peers.
+     *
+     * @param delay
+     */
+    public void discoverPeers(int delay) {
         synchronized (peerDiscoveryLock) {
             if(this.postedPeerDiscoveryRunnable == null && isPeerDiscoveryRequired()) {
                 postedPeerDiscoveryRunnable = peerDiscoveryRunnable;
                 peerDiscoveryHandler.postDelayed(
-                        peerDiscoveryRunnable, peerDiscoveryInterval);
+                        peerDiscoveryRunnable, delay);
                 Log.i(TAG, "discoverPeers: posted runnable for peer discovery");
             }else if(!isPeerDiscoveryRequired()){
                 Log.i(TAG, "discoverPeers: peer discovery not required");
@@ -759,6 +763,10 @@ public class WifiDirectHandler extends NonStopIntentService implements
                 Log.i(TAG, "discoverPeers: post peer discovery runnable not null, no need to post again");
             }
         }
+    }
+
+    public void discoverPeers() {
+        discoverPeers(100);
     }
 
     private boolean isPeerDiscoveryRequired() {
