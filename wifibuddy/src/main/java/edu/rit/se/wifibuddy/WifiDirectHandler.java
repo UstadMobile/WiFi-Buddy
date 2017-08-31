@@ -163,6 +163,8 @@ public class WifiDirectHandler extends NonStopIntentService implements
 
     private Object wifiP2pDeviceLock = new Object();
 
+    private WifiDirectAutoAccept autoAccept;
+
 
     /**
      * Peer discovery runnable. This serves two purposes. It can be used to discover peers, if
@@ -545,6 +547,21 @@ public class WifiDirectHandler extends NonStopIntentService implements
             Log.e(TAG, "Exception attempting to invoke change channel to " + listeningChannel
                     + "/" + operatingChannel, e);
         }
+    }
+
+    /**
+     * Auto accept can automatically accept a connection using a hidden method if the activity
+     * running this service is in the foreground. It will not work for services with foreground
+     * notifications.
+     *
+     * @param enabled true to automatically accept incoming group requests, false otherwise
+     */
+    public void setAutoAccept(boolean enabled) {
+        if(autoAccept == null) {
+            autoAccept = new WifiDirectAutoAccept(wifiP2pManager, channel);
+        }
+
+        autoAccept.intercept(enabled);
     }
 
     /**

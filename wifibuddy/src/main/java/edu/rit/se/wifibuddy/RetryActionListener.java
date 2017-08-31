@@ -3,6 +3,8 @@ package edu.rit.se.wifibuddy;
 import android.net.wifi.p2p.WifiP2pManager;
 
 /**
+ * This is a concept to use later - it is not used
+ *
  * Created by mike on 7/11/17.
  */
 
