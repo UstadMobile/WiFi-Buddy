@@ -165,6 +165,8 @@ public class WifiDirectHandler extends NonStopIntentService implements
 
     private WifiDirectAutoAccept autoAccept;
 
+    private boolean localServicePeerDiscoveryKickEnabled = true;
+
 
     /**
      * Peer discovery runnable. This serves two purposes. It can be used to discover peers, if
@@ -530,18 +532,18 @@ public class WifiDirectHandler extends NonStopIntentService implements
                     WifiP2pManager.ActionListener.class);
             setWifiP2pChannels.invoke(wifiP2pManager, channel, listeningChannel, operatingChannel,
                     new WifiP2pManager.ActionListener() {
-                @Override
-                public void onSuccess() {
-                    Log.d(TAG, "Changed channel (" + listeningChannel + "/" + operatingChannel +
-                            ") succeeded");
-                }
+                        @Override
+                        public void onSuccess() {
+                            Log.d(TAG, "Changed channel (" + listeningChannel + "/" + operatingChannel +
+                                    ") succeeded");
+                        }
 
-                @Override
-                public void onFailure(int reason) {
-                    Log.d(TAG, "Changed channel (" + listeningChannel + "/" +operatingChannel +
-                            ")  failed");
-                }
-            });
+                        @Override
+                        public void onFailure(int reason) {
+                            Log.d(TAG, "Changed channel (" + listeningChannel + "/" +operatingChannel +
+                                    ")  failed");
+                        }
+                    });
 
         }catch(Exception e) {
             Log.e(TAG, "Exception attempting to invoke change channel to " + listeningChannel
@@ -611,7 +613,9 @@ public class WifiDirectHandler extends NonStopIntentService implements
                 @Override
                 public void onDnsSdTxtRecordAvailable(String fullDomainName, Map<String, String> txtRecordMap, WifiP2pDevice srcDevice) {
                     // Records of peer are available
-                    Log.i(TAG, "Peer DNS-SD TXT Record available");
+                    Log.i(TAG, "Peer DNS-SD TXT Record available: " + fullDomainName + " on "
+                            + srcDevice.deviceName + "(" + srcDevice.deviceAddress + ")");
+
 
                     Intent intent = new Intent(Action.DNS_SD_TXT_RECORD_AVAILABLE);
                     intent.putExtra(TXT_MAP_KEY, srcDevice.deviceAddress);
@@ -647,9 +651,10 @@ public class WifiDirectHandler extends NonStopIntentService implements
         }
     }
 
-    private void addServiceDiscoveryRequest(@Nullable final WifiP2pManager.ActionListener listener) {
+    private void addServiceDiscoveryRequest(@Nullable final WifiP2pServiceRequest request,
+                                            @Nullable final WifiP2pManager.ActionListener listener) {
         if(wifiP2pManager!=null){
-            serviceRequest = WifiP2pDnsSdServiceRequest.newInstance();
+            serviceRequest = request != null ? request : WifiP2pDnsSdServiceRequest.newInstance();
 
             // Tell the framework we want to scan for services. Prerequisite for discovering services
             wifiP2pManager.clearServiceRequests(channel, new WifiP2pManager.ActionListener() {
@@ -724,6 +729,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
      */
     public void discoverServices(){
         if(wifiP2pManager!=null){
+            registerServiceDiscoveryListeners();
             // Initiates service discovery. Starts to scan for services we want to connect to
             wifiP2pManager.discoverServices(channel, new WifiP2pManager.ActionListener() {
                 @Override
@@ -754,8 +760,13 @@ public class WifiDirectHandler extends NonStopIntentService implements
     /**
      * Calls initial services discovery call and submits the first
      * Discover task. This will continue until stopDiscoveringServices is called
+     *
+     * @param request WifiP2pServiceRequest with details of which service we're looking for.
+     *                Specifying this seems to improve discovery performance. Devices with a local
+     *                service are supposed to respond to a service request for a service that they
+     *                have.
      */
-    public void continuouslyDiscoverServices(){
+    public void continuouslyDiscoverServices(@Nullable WifiP2pServiceRequest request){
         Log.i(TAG, "Continuously Discover services called");
 
         if (!serviceDiscoveryRegistered) {
@@ -768,7 +779,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
         if (isDiscovering){
             Log.w(TAG, "Services are still discovering, do not need to make this call");
         } else {
-            addServiceDiscoveryRequest(new WifiP2pManager.ActionListener() {
+            addServiceDiscoveryRequest(request, new WifiP2pManager.ActionListener() {
                 @Override
                 public void onSuccess() {
                     isDiscovering = true;
@@ -786,6 +797,10 @@ public class WifiDirectHandler extends NonStopIntentService implements
             });
 
         }
+    }
+
+    public void continuouslyDiscoverServices() {
+        continuouslyDiscoverServices(null);
     }
 
     public void continuouslyDiscoverPeers() {
@@ -824,7 +839,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
 
     private boolean isPeerDiscoveryRequired() {
         synchronized (peerDiscoveryLock) {
-            return isDiscoveringPeers || wifiP2pServiceInfo != null;
+            return isDiscoveringPeers || (wifiP2pServiceInfo != null && localServicePeerDiscoveryKickEnabled);
         }
     }
 
@@ -862,11 +877,12 @@ public class WifiDirectHandler extends NonStopIntentService implements
 
     public void resetServiceDiscovery(final WifiP2pManager.ActionListener listener) {
         Log.i(TAG, "Resetting service discovery");
+        final WifiP2pServiceRequest request = serviceRequest;
         stopServiceDiscovery(new WifiP2pManager.ActionListener() {
             @Override
             public void onSuccess() {
                 Log.i(TAG, "Reset service discovery - successfully stopped");
-                continuouslyDiscoverServices();
+                continuouslyDiscoverServices(request);
                 if(listener != null)
                     listener.onSuccess();
             }
@@ -1787,6 +1803,36 @@ public class WifiDirectHandler extends NonStopIntentService implements
 
     public WifiP2pDeviceList getWifiP2pDeviceList() {
         return wifiP2pDeviceList;
+    }
+
+
+    /**
+     * When a local service is added it should send out UDP broadcasts for anyone listening, and
+     * thereafter it should respond automatically to service discovery requests sent out by peers.
+     * Sometimes responding to service discovery requests from peers is flaky, leading to some online
+     * to recommend regularly calling discoverPeers to force out a new UDP broadcast.
+     *
+     * Unfortunately when this is done it appears to break being able to simultaneously both discover
+     * service and having a local service (e.g. a true network of peers where peers can both discover
+     * and be discovered).
+     *
+     * If this node is only to be used to be discovered by others, and does not need to disover other
+     * nodes it might be worth setting this to true.
+     *
+     * @param localServiceRequiresPeerDiscoveryKick true for enabled, false for disabled.
+     */
+    public void setLocalServicePeerDiscoveryKickEnabled(boolean localServiceRequiresPeerDiscoveryKick) {
+        this.localServicePeerDiscoveryKickEnabled = localServiceRequiresPeerDiscoveryKick;
+    }
+
+    /**
+     * Determine if discover peer kick is enabled or disabled
+     * @see #setLocalServicePeerDiscoveryKickEnabled(boolean)
+     *
+     * @return True if enabled, false otherwise.
+     */
+    public boolean isLocalServicePeerDiscoveryKickEnabled() {
+        return localServicePeerDiscoveryKickEnabled;
     }
 
 }
