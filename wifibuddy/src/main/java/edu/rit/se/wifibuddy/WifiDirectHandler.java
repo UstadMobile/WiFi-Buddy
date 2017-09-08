@@ -418,7 +418,6 @@ public class WifiDirectHandler extends NonStopIntentService implements
         if(wifiP2pManager!=null){
             // Logs information about local service
             Log.i(TAG, "Adding local service: " + serviceName + " : clearing");
-            Thread.dumpStack();
             // Service information
             wifiP2pServiceInfo = WifiP2pDnsSdServiceInfo.newInstance(
                     serviceName,
@@ -428,46 +427,39 @@ public class WifiDirectHandler extends NonStopIntentService implements
 
             final WifiP2pServiceInfo serviceInfo = wifiP2pServiceInfo;
 
-            // Only add a local service if clearLocalServices succeeds
-            wifiP2pManager.clearLocalServices(channel, new WifiP2pManager.ActionListener() {
+            taskQueue.queueTask(new ActionListenerTask("addLocalService - clearLocalServices") {
+                @Override
+                public void run(WifiP2pManager.ActionListener listener) {
+                    wifiP2pManager.clearLocalServices(channel, listener);
+                }
+            })
+            //TODO: Update queue to ensure this should run only if clearLocalServices succeeds
+            .queueTask(new ActionListenerTask("addLocalService - addLocalService") {
+                @Override
+                public void run(WifiP2pManager.ActionListener listener) {
+                    Log.i(TAG, "Adding local service: " + serviceName + " : adding");
+                    wifiP2pManager.addLocalService(channel, serviceInfo, listener);
+                }
+
                 @Override
                 public void onSuccess() {
-                    Log.i(TAG, "Adding local service: " + serviceName + " : adding");
-                    Thread.dumpStack();
-                    if(wifiP2pServiceInfo == null) {
-                        Log.wtf(TAG, "BAD: wifi p2p service info is null after we just made it!");
-                    }
-
-                    // Add the local service
-                    wifiP2pManager.addLocalService(channel, wifiP2pServiceInfo, new WifiP2pManager.ActionListener() {
-                        @Override
-                        public void onSuccess() {
-                            Log.i(TAG, "Local service added");
-                            if(actionListener != null)
-                                actionListener.onSuccess();
-                            serviceStatus=NORMAL_SERVICE_STATUS_ACTIVE;
-                            localBroadcastManager.sendBroadcast(new Intent(Action.NOPROMPT_SERVICE_CREATED_ACTION));
-                            discoverPeers(peerDiscoveryInterval);//call discoverPeers to make sure broadcasting gets kicked
-                        }
-
-                        @Override
-                        public void onFailure(int reason) {
-                            Log.e(TAG, "Failure adding local service: " + FailureReason.fromInteger(reason).toString());
-                            wifiP2pServiceInfo = null;
-                            if(actionListener!=null)
-                                actionListener.onFailure(reason);
-                        }
-                    });
+                    super.onSuccess();
+                    Log.i(TAG, "Local service added");
+                    actionListenerSuccess(actionListener);
+                    serviceStatus=NORMAL_SERVICE_STATUS_ACTIVE;
+                    wifiP2pServiceInfo = serviceInfo;
+                    localBroadcastManager.sendBroadcast(new Intent(Action.NOPROMPT_SERVICE_CREATED_ACTION));
+                    discoverPeers(peerDiscoveryInterval);//call discoverPeers to make sure broadcasting gets kicked
                 }
 
                 @Override
                 public void onFailure(int reason) {
-                    Log.e(TAG, "Failure clearing local services: " + FailureReason.fromInteger(reason).toString());
+                    super.onFailure(reason);
                     wifiP2pServiceInfo = null;
-                    if(actionListener != null)
-                        actionListener.onFailure(reason);
+                    actionListenerFailure(actionListener, reason);
                 }
             });
+
         }else{
             Log.e(TAG,"WifiDirectHandler: addLocalService: wifip2pManager is null");
         }
@@ -1261,7 +1253,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
         if (wifiState == WifiManager.WIFI_STATE_ENABLED) {
             // Register app with Wi-Fi P2P framework, register WifiDirectBroadcastReceiver
             Log.i(TAG, "Wi-Fi enabled");
-            taskQueue.queueTask(new ActionListenerTask() {
+            taskQueue.queueTask(new ActionListenerTask("wifi enabled - register") {
                 @Override
                 public void run(WifiP2pManager.ActionListener listener) {
                     registerP2p();
@@ -1326,34 +1318,6 @@ public class WifiDirectHandler extends NonStopIntentService implements
                     listener.onSuccess();
                 }
             });
-
-
-
-//            stopServiceDiscovery();
-//            stopPeerDiscovery();
-//            clearServiceDiscoveryRequests();
-//            if (wifiP2pServiceInfo != null) {
-//                removeService();
-//                wifiP2pServiceInfo = null;
-//            }
-//            serviceDiscoveryRegistered = false;
-//            removeGroup(new WifiP2pManager.ActionListener() {
-//                @Override
-//                public void onSuccess() {
-//                    Log.i(TAG, "Remove group success reported after wifi disabled,");
-//                }
-//
-//                @Override
-//                public void onFailure(int i) {
-//                    Log.i(TAG, "Remove group failure reported after wifi disabled - but its gone");
-//                    wifiP2pGroup = null;
-//                    groupFormed = false;
-//                    isGroupOwner = false;
-//                }
-//            });
-//            removePersistentGroups();
-//            unregisterP2pReceiver();
-//            unregisterP2p();
         }
         localBroadcastManager.sendBroadcast(new Intent(Action.WIFI_STATE_CHANGED));
     }

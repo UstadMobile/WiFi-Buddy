@@ -9,9 +9,51 @@ import java.util.TimerTask;
 import java.util.Vector;
 
 /**
- * Created by mike on 9/8/17.
- */
+ * The WiFi p2p api lends itself to callback hell. e.g. we want to clear local services, and then,
+ * if successful, add our local service. There are also actions that take place after wifi is
+ * enabled and disabled. If those callbacks take longer than the time in between wifi being enabled
+ * and disabled a cross over can occur.
+ *
+ * ActionListenerTaskQueue is designed to simplify things. Instead of this:
+ *
+     wifiP2pManager.clearLocalServices(channel, new WifiP2pManager.ActionListener() {
+         @Override
+         public void onSuccess() {
+             Log.i(TAG, "Adding local service: " + serviceName + " : adding");
+             // Add the local service
+             wifiP2pManager.addLocalService(channel, wifiP2pServiceInfo, new WifiP2pManager.ActionListener() {
+                 @Override
+                 public void onSuccess() {
 
+ *
+ * You can now do this:
+ *
+    taskQueue.queueTask(new ActionListenerTask("addLocalService - clearLocalServices") {
+        @Override
+        public void run(WifiP2pManager.ActionListener listener) {
+            wifiP2pManager.clearLocalServices(channel, listener);
+        }
+    })
+    .queueTask(new ActionListenerTask("addLocalService - addLocalService") {
+        @Override
+        public void run(WifiP2pManager.ActionListener listener) {
+            Log.i(TAG, "Adding local service: " + serviceName + " : adding");
+            wifiP2pManager.addLocalService(channel, serviceInfo, listener);
+        }
+    })
+});
+
+ * Each task will execute after the previous one has failed or succeeded. Make a run method which calls
+ * the required method (e.g. clearLocalServices, addLocalService, etc) and pass it the listener
+ * received in the argument. You can also override the onSuccess and onFailure method of the
+ * ActionListenerTask. Those (optional) methods will be executed when the task succeeds or fails.
+ *
+ * A task can also timeout. The default timeout is 10seconds. If the task times out the onTimeout
+ * method will be executed, and the next task will be run (the onSuccess and onFailure methods
+ * of that ActionListenerTask will not run).
+ *
+ * As Wifi P2P on Android can exhibit strange behaviours this class performs extensive logging.
+ */
 public class ActionListenerTaskQueue  {
 
     private Vector<ActionListenerTask> tasks;
@@ -46,12 +88,24 @@ public class ActionListenerTaskQueue  {
         this("");
     }
 
+    /**
+     * Main constructor
+     *
+     * @param queueName The queue name - used for logging purposes
+     */
     public ActionListenerTaskQueue(String queueName) {
         tasks = new Vector<>();
         this.queueName = queueName;
         timeoutTimer = new Timer("ActionListenerQueue Timeout Timer - " + queueName);
     }
 
+    /**
+     * Queue a task to run. If nothing is running now, it will run immediately. Otherwise it will
+     * be added to the queue.
+     *
+     * @param task Task to execute
+     * @return this
+     */
     public ActionListenerTaskQueue queueTask(ActionListenerTask task) {
         synchronized (this) {
             Log.i(WifiDirectHandler.TAG, makeLogLineStart(task) + " queue");
