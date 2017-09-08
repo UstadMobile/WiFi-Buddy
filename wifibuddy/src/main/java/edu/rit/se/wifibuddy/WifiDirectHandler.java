@@ -167,6 +167,8 @@ public class WifiDirectHandler extends NonStopIntentService implements
 
     private boolean localServicePeerDiscoveryKickEnabled = true;
 
+    private ActionListenerTaskQueue taskQueue;
+
 
     /**
      * Peer discovery runnable. This serves two purposes. It can be used to discover peers, if
@@ -224,6 +226,7 @@ public class WifiDirectHandler extends NonStopIntentService implements
         super(ANDROID_SERVICE_NAME);
         dnsSdTxtRecordMap = new HashMap<>();
         dnsSdServiceMap = new HashMap<>();
+        taskQueue = new ActionListenerTaskQueue("WifiDirectHandler - queue");
     }
 
     /**
@@ -410,12 +413,12 @@ public class WifiDirectHandler extends NonStopIntentService implements
     }
 
     // TODO add JavaDoc
-    public void addLocalService(String serviceName, HashMap<String, String> serviceRecord, @Nullable final WifiP2pManager.ActionListener actionListener) {
+    public void addLocalService(final String serviceName, HashMap<String, String> serviceRecord, @Nullable final WifiP2pManager.ActionListener actionListener) {
 
         if(wifiP2pManager!=null){
             // Logs information about local service
-            Log.i(TAG, "Adding local service: " + serviceName);
-
+            Log.i(TAG, "Adding local service: " + serviceName + " : clearing");
+            Thread.dumpStack();
             // Service information
             wifiP2pServiceInfo = WifiP2pDnsSdServiceInfo.newInstance(
                     serviceName,
@@ -423,10 +426,18 @@ public class WifiDirectHandler extends NonStopIntentService implements
                     serviceRecord
             );
 
+            final WifiP2pServiceInfo serviceInfo = wifiP2pServiceInfo;
+
             // Only add a local service if clearLocalServices succeeds
             wifiP2pManager.clearLocalServices(channel, new WifiP2pManager.ActionListener() {
                 @Override
                 public void onSuccess() {
+                    Log.i(TAG, "Adding local service: " + serviceName + " : adding");
+                    Thread.dumpStack();
+                    if(wifiP2pServiceInfo == null) {
+                        Log.wtf(TAG, "BAD: wifi p2p service info is null after we just made it!");
+                    }
+
                     // Add the local service
                     wifiP2pManager.addLocalService(channel, wifiP2pServiceInfo, new WifiP2pManager.ActionListener() {
                         @Override
@@ -579,20 +590,22 @@ public class WifiDirectHandler extends NonStopIntentService implements
                         groupFormed = false;
                         isGroupOwner = false;
                         Log.i(TAG, "Group removed");
-                        if(actionListener != null)
-                            actionListener.onSuccess();
+                        actionListenerSuccess(actionListener);
                     }
 
                     @Override
                     public void onFailure(int reason) {
                         Log.e(TAG, "Failure removing group: " + FailureReason.fromInteger(reason).toString());
-                        if(actionListener != null)
-                            actionListener.onFailure(reason);
+                        actionListenerFailure(actionListener, reason);
                     }
                 });
+            }else {
+                Log.i(TAG, "removeGroup: no group to remove");
+                actionListenerSuccess(actionListener);
             }
         }else{
             Log.e(TAG,"WifiDirectHandler: removeGroup: wifip2pManager is null");
+            actionListenerFailure(actionListener, WifiP2pManager.ERROR);
         }
     }
 
@@ -952,31 +965,44 @@ public class WifiDirectHandler extends NonStopIntentService implements
     /**
      * Removes a registered local service.
      */
-    public void removeService() {
+    public void removeService(final WifiP2pManager.ActionListener actionListener) {
         if(wifiP2pManager!=null){
             if(wifiP2pServiceInfo != null) {
                 Log.i(TAG, "Removing local service");
                 wifiP2pManager.removeLocalService(channel, wifiP2pServiceInfo, new WifiP2pManager.ActionListener() {
                     @Override
                     public void onSuccess() {
+                        //Suspected issue: when wifi is re-enabled - this will succeed, set wifip2pserviceinfo to null, and make the subsequent addLocalService fail
+                        //try shortening the time for re-enabling service discovery in networkmanagerandroid
+                        Log.i(TAG, "Local service removed");
                         wifiP2pServiceInfo = null;
                         Intent intent = new Intent(Action.SERVICE_REMOVED);
                         localBroadcastManager.sendBroadcast(intent);
-                        Log.i(TAG, "Local service removed");
+                        if(actionListener != null)
+                            actionListener.onSuccess();
                     }
 
                     @Override
                     public void onFailure(int reason) {
                         Log.e(TAG, "Failure removing local service: " + FailureReason.fromInteger(reason).toString());
+                        if(actionListener != null)
+                            actionListener.onFailure(reason);
                     }
                 });
-                wifiP2pServiceInfo = null;
             } else {
                 Log.w(TAG, "No local service to remove");
+                if(actionListener != null)
+                    actionListener.onSuccess();
             }
         }else{
             Log.e(TAG,"WifiDirectHandler: removeService: wifip2pManager is null");
+            if(actionListener != null)
+                actionListener.onFailure(50);
         }
+    }
+
+    public void removeService() {
+        removeService(null);
     }
 
     private void clearServiceDiscoveryRequests(final WifiP2pManager.ActionListener actionListener) {
@@ -1235,35 +1261,99 @@ public class WifiDirectHandler extends NonStopIntentService implements
         if (wifiState == WifiManager.WIFI_STATE_ENABLED) {
             // Register app with Wi-Fi P2P framework, register WifiDirectBroadcastReceiver
             Log.i(TAG, "Wi-Fi enabled");
-            registerP2p();
-            registerP2pReceiver();
+            taskQueue.queueTask(new ActionListenerTask() {
+                @Override
+                public void run(WifiP2pManager.ActionListener listener) {
+                    registerP2p();
+                    registerP2pReceiver();
+                    listener.onSuccess();
+                }
+            });
         } else if (wifiState == WifiManager.WIFI_STATE_DISABLED) {
             // Remove local service, unregister app with Wi-Fi P2P framework, unregister P2pReceiver
             Log.i(TAG, "Wi-Fi disabled");
-            stopServiceDiscovery();
-            stopPeerDiscovery();
-            clearServiceDiscoveryRequests();
-            if (wifiP2pServiceInfo != null) {
-                removeService();
-            }
-            serviceDiscoveryRegistered = false;
-            removeGroup(new WifiP2pManager.ActionListener() {
+
+            taskQueue.queueTask(new ActionListenerTask("wifi disabled - stop service discovery") {
                 @Override
-                public void onSuccess() {
-                    Log.i(TAG, "Remove group success reported after wifi disabled,");
+                public void run(WifiP2pManager.ActionListener listener) {
+                    stopServiceDiscovery(listener);
+                }
+            })
+            .queueTask(new ActionListenerTask("wifi disabled - stop peer discovery") {
+                @Override
+                public void run(WifiP2pManager.ActionListener listener) {
+                    stopPeerDiscovery();
+                    listener.onSuccess();
+                }
+            })
+            .queueTask(new ActionListenerTask("wifi disabled - clear service discovery requests") {
+                @Override
+                public void run(WifiP2pManager.ActionListener listener) {
+                    clearServiceDiscoveryRequests(listener);
+                }
+            });
+
+            if(wifiP2pServiceInfo != null){
+                taskQueue.queueTask(new ActionListenerTask("wifi disabled - remove service") {
+                    @Override
+                    public void run(WifiP2pManager.ActionListener listener) {
+                        removeService(listener);
+                    }
+                });
+            }
+
+            taskQueue.queueTask(new ActionListenerTask("wifi disabled - remove group") {
+                @Override
+                public void run(WifiP2pManager.ActionListener listener) {
+                    wifiP2pServiceInfo = null;
+                    removeGroup(listener);
                 }
 
                 @Override
-                public void onFailure(int i) {
+                public void onFailure(int reason) {
                     Log.i(TAG, "Remove group failure reported after wifi disabled - but its gone");
                     wifiP2pGroup = null;
                     groupFormed = false;
                     isGroupOwner = false;
                 }
+            })
+            .queueTask(new ActionListenerTask("wifi disabled - finish") {
+                @Override
+                public void run(WifiP2pManager.ActionListener listener) {
+                    removePersistentGroups();
+                    unregisterP2pReceiver();
+                    unregisterP2p();
+                    listener.onSuccess();
+                }
             });
-            removePersistentGroups();
-            unregisterP2pReceiver();
-            unregisterP2p();
+
+
+
+//            stopServiceDiscovery();
+//            stopPeerDiscovery();
+//            clearServiceDiscoveryRequests();
+//            if (wifiP2pServiceInfo != null) {
+//                removeService();
+//                wifiP2pServiceInfo = null;
+//            }
+//            serviceDiscoveryRegistered = false;
+//            removeGroup(new WifiP2pManager.ActionListener() {
+//                @Override
+//                public void onSuccess() {
+//                    Log.i(TAG, "Remove group success reported after wifi disabled,");
+//                }
+//
+//                @Override
+//                public void onFailure(int i) {
+//                    Log.i(TAG, "Remove group failure reported after wifi disabled - but its gone");
+//                    wifiP2pGroup = null;
+//                    groupFormed = false;
+//                    isGroupOwner = false;
+//                }
+//            });
+//            removePersistentGroups();
+//            unregisterP2pReceiver();
+//            unregisterP2p();
         }
         localBroadcastManager.sendBroadcast(new Intent(Action.WIFI_STATE_CHANGED));
     }
@@ -1833,6 +1923,17 @@ public class WifiDirectHandler extends NonStopIntentService implements
      */
     public boolean isLocalServicePeerDiscoveryKickEnabled() {
         return localServicePeerDiscoveryKickEnabled;
+    }
+
+    public static void actionListenerSuccess(@Nullable WifiP2pManager.ActionListener listener){
+        if(listener != null)
+            listener.onSuccess();
+    }
+
+    public static void actionListenerFailure(@Nullable WifiP2pManager.ActionListener listener, int reason) {
+        if(listener != null) {
+            listener.onFailure(reason);
+        }
     }
 
 }
