@@ -563,7 +563,8 @@ public class WifiDirectHandler extends NonStopIntentService implements
      */
     public void setAutoAccept(boolean enabled) {
         if(autoAccept == null) {
-            autoAccept = new WifiDirectAutoAccept(wifiP2pManager, channel);
+            autoAccept = wifiP2pManager != null ? new WifiDirectAutoAccept(wifiP2pManager, channel)
+                    : new WifiDirectAutoAccept(getApplicationContext());
         }
 
         autoAccept.intercept(enabled);

@@ -72,13 +72,12 @@ public class WifiDirectAutoAccept {
 
         try {
             dialogInterface = Class.forName("android.net.wifi.p2p.WifiP2pManager$DialogListener");
-            dialogListenerMethod = manager.getClass().getMethod("setDialogListener",
+            Class managerClass = manager.getClass();
+            dialogListenerMethod = managerClass.getMethod("setDialogListener",
                     WifiP2pManager.Channel.class,
                     dialogInterface);
-        } catch (NoSuchMethodException ex) {
-            // Ignore
-        } catch (ClassNotFoundException ex) {
-            // Ignore
+        } catch (Exception e) {
+            Log.e(WifiDirectHandler.TAG, "Exception enabling wifi direct auto accept", e);
         }
 
         dialogListener = newDialogListener();
